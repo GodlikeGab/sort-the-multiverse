@@ -496,3 +496,44 @@ a.tab { text-decoration: none; }
 /* iPhone: a long-press on the card must open the details, not Safari's image menu */
 .swipe-card, .swipe-card img { -webkit-touch-callout: none; -webkit-user-drag: none; }
 html { overscroll-behavior-y: contain; }
+
+/* ---------- fixes from a real iPhone ---------- */
+/* The bar's own height sits below the status bar instead of being squeezed under it. */
+.topbar { height: calc(var(--nav-h) + env(safe-area-inset-top)); }
+
+/* Swiping gets the whole screen: no navigation bar (the ‹ arrow leads back), and the
+   real screen height, including the strip iPhone web apps otherwise leave unused. */
+.app:has(.swipe-page) .topbar { display: none; }
+.swipe-page {
+  height: var(--app-h, 100dvh);
+  padding: calc(8px + env(safe-area-inset-top)) 12px calc(8px + env(safe-area-inset-bottom));
+}
+.swipe-head { gap: 6px; margin-bottom: 6px; }
+.swipe-head .stats { gap: 2px 14px; }
+.type-bar { padding: 0 0 4px; }
+.stage { padding: 6px 0; }
+.deck-stack { height: min(100%, calc((100vw - 24px) / var(--card-ratio))); }
+
+/* Action buttons stay perfect circles and scale with the screen width. */
+.actions { gap: min(1.8vw, 10px); margin-top: 4px; }
+.act { flex: none; aspect-ratio: 1; height: auto; width: min(14.4vw, 64px); }
+.act.keep, .act.cut { width: min(16.4vw, 72px); height: auto; }
+.act.undo { width: min(11.3vw, 48px); height: auto; color: var(--text); border-color: #3a3a3a; }
+.act .ico { font-size: min(5.6vw, 1.35rem); }
+.act .lbl { font-size: min(2.6vw, 0.62rem); }
+.ico-svg { width: 52%; height: 52%; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Things pinned to the bottom edge reach the real bottom of the screen. */
+.footer-bar { bottom: calc(-1 * var(--gap-fix, 0px)); }
+.backdrop { bottom: calc(-1 * var(--gap-fix, 0px)); }
+
+.type-row { width: 100%; display: flex; align-items: flex-start; gap: 6px; flex: none; }
+.type-row .type-bar {
+  flex: 1; min-width: 0; width: auto;
+  /* fades out at the right edge to show the row scrolls */
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  padding-right: 24px;
+}
+@media (min-width: 900px) { .type-row .type-bar { -webkit-mask-image: none; mask-image: none; padding-right: 0; } }
+.ico-svg { flex: none; width: 24px; height: 24px; }

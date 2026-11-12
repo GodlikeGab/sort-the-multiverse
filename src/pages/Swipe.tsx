@@ -305,6 +305,7 @@ export default function Swipe() {
     <main className="swipe-page">
       {header}
       {phase === 'swipe' && (
+        <div className="type-row">
         <div className="type-bar" role="tablist" aria-label="Filter by card type">
           <button className={`type-chip ${!cat ? 'on' : ''}`} onClick={() => setCat(null)}>
             All <span>{st.reviewed}/{st.total}</span>
@@ -314,6 +315,7 @@ export default function Swipe() {
               {c} <span>{st.byType[c].reviewed}/{st.byType[c].total}</span>
             </button>
           ))}
+        </div>
           <button className="type-chip bulk" onClick={() => setBulkOpen(true)}>Bulk…</button>
         </div>
       )}
@@ -336,7 +338,7 @@ export default function Swipe() {
       {error && <p className="error small" style={{ margin: '4px 0' }}>{error}</p>}
       <div className="actions">
         <button className="act undo" onClick={undo} disabled={!canUndo} aria-label="Undo (Z)" title="Undo (Z)">
-          <span className="ico">↶</span>
+          <svg className="ico-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" /></svg>
         </button>
         {(['cut', 'bad', 'maybe', 'keep'] as Decision[]).filter((d) => allowed.includes(d)).map((d) => (
           <button key={d} className={`act ${d}`} onClick={() => deck.current?.swipe(d)} disabled={!queue.length}
@@ -347,7 +349,7 @@ export default function Swipe() {
         ))}
         <button className="act undo" onClick={() => queue[0] && setInfo(queue[0])} disabled={!queue.length}
           aria-label="Card details" title="Oracle text (I)">
-          <span className="ico" style={{ fontStyle: 'italic', fontFamily: 'Georgia, serif' }}>i</span>
+          <svg className="ico-svg" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="6.5" r="0.6" fill="currentColor" /><path d="M12 11v7" /></svg>
         </button>
       </div>
       <div className="kbd-hint">
