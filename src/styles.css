@@ -537,3 +537,28 @@ html { overscroll-behavior-y: contain; }
 }
 @media (min-width: 900px) { .type-row .type-bar { -webkit-mask-image: none; mask-image: none; padding-right: 0; } }
 .ico-svg { flex: none; width: 24px; height: 24px; }
+
+/* ---------- swipe controls: direction reminders above a wide Undo bar ---------- */
+.legend { width: 100%; display: flex; justify-content: space-between; gap: 6px; margin-top: 2px; flex: none; }
+.dir {
+  flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  min-height: 26px; padding: 0; border: 0; background: none; cursor: pointer;
+  font-size: 0.74rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+}
+.dir .arrow { font-size: 1.05rem; line-height: 1; }
+.dir.keep { color: var(--keep); }
+.dir.cut { color: var(--cut); }
+.dir.maybe { color: var(--maybe); }
+.dir.bad { color: var(--bad); }
+.dir:disabled { opacity: 0.4; cursor: default; }
+@media (hover: none) { .dir { pointer-events: none; } }
+.undo-row { width: 100%; display: flex; gap: 8px; margin-top: 6px; flex: none; }
+.undo-bar, .info-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  height: 54px; border-radius: 16px; border: 1px solid #3a3a3a; background: #0e0e0e; color: var(--text);
+  font-size: 1.02rem; font-weight: 650; cursor: pointer; transition: transform 0.08s, background 0.15s;
+}
+.undo-bar { flex: 1; }
+.info-btn { flex: none; width: 54px; }
+.undo-bar:active, .info-btn:active { transform: scale(0.98); background: #1a1a1a; }
+.undo-bar:disabled, .info-btn:disabled { opacity: 0.35; cursor: default; }

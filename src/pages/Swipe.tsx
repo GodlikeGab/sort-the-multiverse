@@ -336,18 +336,21 @@ export default function Swipe() {
         )}
       </div>
       {error && <p className="error small" style={{ margin: '4px 0' }}>{error}</p>}
-      <div className="actions">
-        <button className="act undo" onClick={undo} disabled={!canUndo} aria-label="Undo (Z)" title="Undo (Z)">
-          <svg className="ico-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" /></svg>
-        </button>
+      {/* Reminders of what each swipe direction means. They react to a mouse click
+          (for a computer) but not to touch, so a stray thumb cannot decide a card. */}
+      <div className="legend">
         {(['cut', 'bad', 'maybe', 'keep'] as Decision[]).filter((d) => allowed.includes(d)).map((d) => (
-          <button key={d} className={`act ${d}`} onClick={() => deck.current?.swipe(d)} disabled={!queue.length}
-            title={DECISION_META[d].label}>
-            <span className="ico">{DECISION_META[d].arrow}</span>
-            <span className="lbl">{DECISION_META[d].label}</span>
+          <button key={d} className={`dir ${d}`} tabIndex={-1} onClick={() => deck.current?.swipe(d)} disabled={!queue.length}>
+            <span className="arrow">{DECISION_META[d].arrow}</span>{DECISION_META[d].label}
           </button>
         ))}
-        <button className="act undo" onClick={() => queue[0] && setInfo(queue[0])} disabled={!queue.length}
+      </div>
+      <div className="undo-row">
+        <button className="undo-bar" onClick={undo} disabled={!canUndo} title="Undo (Z)">
+          <svg className="ico-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" /></svg>
+          Undo
+        </button>
+        <button className="info-btn" onClick={() => queue[0] && setInfo(queue[0])} disabled={!queue.length}
           aria-label="Card details" title="Oracle text (I)">
           <svg className="ico-svg" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="6.5" r="0.6" fill="currentColor" /><path d="M12 11v7" /></svg>
         </button>
