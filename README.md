@@ -41,8 +41,8 @@ app's data.
 
 ### New project
 
-- **Name, format, deck size** (Commander 100, Constructed 60, or any number) and an optional
-  **commander**, which limits the pool to its color identity.
+- **Name, format** and an optional **commander**, which limits the pool to its color identity.
+  Every deck is 100 cards: the commander plus up to 99 others.
 - **Search builder**: text (name, oracle, flavor, keywords), type line (types, supertypes,
   subtypes), colors and color identity (exactly / including / at most), mana (value, cost
   symbols, produces), power / toughness / loyalty, printing (rarity, set, year, artist),
@@ -64,7 +64,7 @@ big pools (every card in a commander's colors) take a minute or two.
 | Cut    | left  | `Space` or `←` |
 | Maybe  | up    | `↓` or `↑` |
 | Bad    | down  | `B` |
-| Undo (unlimited) | ↶ button | `Z` |
+| Undo (unlimited) | the wide Undo bar | `Z` |
 | Flip a double-faced card | tap the card | `F` |
 | Oracle text | long-press, or the *i* button | `I` |
 
@@ -73,12 +73,8 @@ Every swipe is saved immediately. Close the app at any point and pick up where y
 **Type filter.** The row of chips above the card (All, Creatures, Artifacts, …) shows
 reviewed/total for each card type. Tap one to swipe only that type; tap it again for all.
 
-**Bulk.** The *Bulk…* chip decides many unreviewed cards at once: pick a card type and/or a
-mana value range, see how many cards match, then cut, keep or maybe them all. One Undo
-reverts the whole batch.
-
 **Nothing to sway you.** The app never shows a card's price or how popular it is, and it
-cannot order or bulk-cut cards by either, so every card is judged on what it does. The header
+cannot order cards by either, so every card is judged on what it does. The header
 estimates the time left at your current pace.
 
 **Bad** puts the card on a global bad-cards list. Those cards are hidden from all your
@@ -96,22 +92,17 @@ cards off it.
 - **Start next round** makes the kept cards the new pool.
 - The project page keeps the **history of all rounds**; open any round to see its lists.
 
-### Basic lands and the target
+### The target
 
-You do not need to know the number of basics in advance: they fill whatever the kept cards
-leave open. When a round is finished, the summary shows the **open slots** (deck size − commander
-− kept cards − basics). Set the counts yourself, including snow basics and Wastes, or tap
-**Fill with basics**, which splits the open slots by how often each colour's mana symbol
-appears in your kept cards. The counts stay editable, there and on the project page.
+A deck is exactly 100 cards, so you can keep at most 99 besides the commander. Basic lands are
+not tracked in the app: whatever slots your kept cards leave open are for basics, which you add
+in ManaBox. The round summary says how many you are over, or how many slots are left.
 
-If you already know roughly how many basics you want, enter them early so the target and the
-"over the deck size" count account for them.
+When a finished round's kept cards fit in the deck, the project is marked **Deck ready**. You
+can still start another round to trim further.
 
-**Non-basic target = deck size − basics − commander.** It updates live. When a finished
-round's kept cards exactly fill the target, the project is marked **Deck complete**.
-
-**Kept cards** on the project page shows counts by type, total lands, the mana curve and
-average mana value of what you have kept so far.
+**Kept cards** on the project page shows counts by type, lands kept, the mana curve and average
+mana value of what you have kept so far.
 
 **Export to ManaBox** downloads the kept cards as a `.txt` file (there is also a copy
 button), one card per line under section headers:
@@ -125,8 +116,7 @@ button), one card per line under section headers:
 1 Llanowar Elves
 
 // LANDS
-8 Swamp
-9 Forest
+1 Bojuka Bog
 ```
 
 ### Managing a project
@@ -173,7 +163,7 @@ Notes:
 
 ## Good to know
 
-- **Basic lands are left out of searches** (`-t:basic` is added) because you add them as counts.
+- **Basic lands are left out of searches** (`-t:basic` is added); you add them yourself in ManaBox.
 - **A project's search is fixed** once created. To change it, create a new project.
 - **Card count check**: after a download the app compares what it saved with what Scryfall
   reported and warns on the project page if they differ.

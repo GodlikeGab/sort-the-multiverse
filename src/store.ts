@@ -23,6 +23,8 @@ const ALL_BASICS = [
   'Snow-Covered Mountain', 'Snow-Covered Forest', 'Snow-Covered Wastes',
 ];
 const DECISIONS: Decision[] = ['keep', 'cut', 'maybe', 'bad'];
+/** Every deck is exactly 100 cards. Basic lands are added outside the app, in whatever slots are left. */
+const DECK_SIZE = 100;
 
 interface RoundMeta {
   number: number;
@@ -66,14 +68,7 @@ interface LogRec {
   prev: Decision | null;
   d: Decision;
   badAdded: boolean; // this swipe put the card on the global bad list
-  batch?: number; // set on bulk actions, so undo reverts them together
-}
-
-/** Which undecided cards a bulk action applies to. Empty fields mean "no limit". */
-export interface BulkCriteria {
-  cat?: string | null; // card type
-  mvMin?: number | null;
-  mvMax?: number | null;
+  batch?: number; // entries sharing a batch id are undone together (written by the former Bulk tool)
 }
 
 const STORES = ['projects', 'cards', 'rc', 'log', 'bad'] as const;
@@ -168,23 +163,22 @@ function computeState(p: ProjectRec, items: Rc[], bad: Set<string>): ProjectStat
     t.total++;
     if (i.d) t.reviewed++;
   }
-  const basicsTotal = Object.values(p.basics).reduce((a, b) => a + b, 0);
   const commanderCount = p.commanderId ? 1 : 0;
-  const target = p.deckSize - basicsTotal - commanderCount; // non-basic cards wanted
+  const target = DECK_SIZE - commanderCount; // the most non-basic cards a deck can hold
   const total = c.pool - c.hidden;
   const reviewed = c.keep + c.cut + c.maybe + c.bad;
   const resolved = c.undecided === 0 && c.maybe === 0;
-  // Complete: the round is fully decided and the keeps fill the deck exactly.
-  // (A fresh round whose whole pool already equals the target also counts.)
-  const freshExact = reviewed === 0 && p.currentRound > 1 && total === target;
+  // Ready: the round is fully decided and the kept cards fit in the deck. Slots left
+  // open are for basic lands. (A fresh round whose whole pool already fits also counts.)
+  const freshFit = reviewed === 0 && p.currentRound > 1 && total <= target;
   return {
     round: p.currentRound, total, reviewed, remaining: c.undecided,
     keep: c.keep, cut: c.cut, maybe: c.maybe, bad: c.bad, hidden: c.hidden,
-    deckSize: p.deckSize, basicsTotal, commanderCount, target,
-    toCut: (freshExact ? total : c.keep) - target,
+    deckSize: DECK_SIZE, commanderCount, target,
+    toCut: (freshFit ? total : c.keep) - target, // >0: still to cut, <0: slots open for basics
     resolved,
-    complete: total > 0 && ((resolved && c.keep === target) || freshExact),
-    deckFromPool: freshExact,
+    complete: total > 0 && ((resolved && c.keep > 0 && c.keep <= target) || freshFit),
+    deckFromPool: freshFit,
     byType,
   };
 }
@@ -203,26 +197,6 @@ async function toProject(p: ProjectRec, state: ProjectState | null): Promise<Pro
     sort: p.sort, ignoreBad: p.ignoreBad, basics: p.basics, status: p.status, load: p.load,
     createdAt: p.createdAt, lastActivityAt: p.lastActivityAt, state,
   };
-}
-
-async function bulkMatch(p: ProjectRec, crit: BulkCriteria): Promise<Rc[]> {
-  const { items } = await loadRound(p.id, p.currentRound);
-  const bad = await getBad();
-  let hits = items.filter(
-    (i) => !i.d && (p.ignoreBad || !bad.has(i.cardId)) && (!crit.cat || i.cat === crit.cat),
-  );
-  const has = (n: number | null | undefined): n is number => n != null && !Number.isNaN(n);
-  if (has(crit.mvMin) || has(crit.mvMax)) {
-    const cards = new Map((await getCards(hits.map((i) => i.cardId))).map((c) => [c.id, c]));
-    hits = hits.filter((i) => {
-      const c = cards.get(i.cardId);
-      if (!c) return false;
-      if (has(crit.mvMin) && c.cmc < crit.mvMin) return false;
-      if (has(crit.mvMax) && c.cmc > crit.mvMax) return false;
-      return true;
-    });
-  }
-  return hits;
 }
 
 async function getCards(ids: string[]): Promise<Card[]> {
@@ -611,40 +585,6 @@ export const api = {
     return { undone: { card: card ?? null, from: last.d, to: last.prev, count }, state: p.state };
   },
 
-  /** How many undecided cards a bulk action would touch. */
-  async bulkCount(id: number | string, crit: BulkCriteria) {
-    const p = await getReady(id);
-    return (await bulkMatch(p, crit)).length;
-  },
-
-  /** Decide every undecided card that matches, in one step (and one undo). */
-  async bulkApply(id: number | string, crit: BulkCriteria, decision: 'keep' | 'cut' | 'maybe') {
-    const p = await getReady(id);
-    const mem = await loadRound(p.id, p.currentRound);
-    const bad = await getBad();
-    const hits = await bulkMatch(p, crit);
-    if (!hits.length) return { count: 0, state: computeState(p, mem.items, bad) };
-    const batch = Date.now();
-    for (const rc of hits) rc.d = decision;
-    p.lastActivityAt = now();
-    p.state = computeState(p, mem.items, bad);
-    try {
-      const tx = (await getDb()).transaction(['projects', 'rc', 'log'], 'readwrite');
-      for (const rc of hits) {
-        void tx.objectStore('rc').put(rc);
-        void tx.objectStore('log').add({
-          pid: p.id, round: p.currentRound, cardId: rc.cardId, prev: null, d: decision, badAdded: false, batch,
-        } satisfies LogRec);
-      }
-      void tx.objectStore('projects').put(p);
-      await tx.done;
-    } catch (err) {
-      dropCache(p.id);
-      throw err;
-    }
-    return { count: hits.length, state: p.state };
-  },
-
   /** Re-sorts the cards still to review in the current round. Decided cards are untouched. */
   async reorder(id: number | string, sort: SortKey): Promise<Project> {
     const p = await getReady(id);
@@ -676,50 +616,6 @@ export const api = {
     return toProject(p, p.state);
   },
 
-  /**
-   * Fills the open deck slots with basic lands, split by how often each colour's
-   * mana symbol appears in the kept cards' costs (within the commander's identity).
-   * It is a starting point; the counts stay editable.
-   */
-  async fillBasics(id: number | string): Promise<Project> {
-    const p = await getReady(id);
-    const { items } = await loadRound(p.id, p.currentRound);
-    const bad = await getBad();
-    const s = computeState(p, items, bad);
-    const open = -s.toCut;
-    if (open <= 0) return toProject(p, s);
-    const kept = items.filter((i) => (s.deckFromPool ? true : i.d === 'keep'));
-    const pips: Record<string, number> = { W: 0, U: 0, B: 0, R: 0, G: 0 };
-    for (const c of await getCards(kept.map((i) => i.cardId))) {
-      for (const m of (c.manaCost ?? '').matchAll(/\{([^}]+)\}/g)) {
-        for (const ch of m[1]) if (ch in pips) pips[ch]++;
-      }
-    }
-    const land: Record<string, string> = { W: 'Plains', U: 'Island', B: 'Swamp', R: 'Mountain', G: 'Forest' };
-    const [cmd] = p.commanderId ? await getCards([p.commanderId]) : [];
-    let colors = Object.keys(pips).filter((c) => (cmd ? cmd.colorIdentity.includes(c) : pips[c] > 0));
-    if (cmd && !colors.some((c) => pips[c] > 0)) for (const c of colors) pips[c] = 1; // no symbols: split evenly
-    colors = colors.filter((c) => pips[c] > 0);
-    const basics = { ...p.basics };
-    if (!colors.length) basics.Wastes = (basics.Wastes ?? 0) + open; // colourless deck
-    else {
-      const sum = colors.reduce((n, c) => n + pips[c], 0);
-      const shares = colors.map((c) => ({ c, exact: (open * pips[c]) / sum }));
-      const left = open - shares.reduce((n, x) => n + Math.floor(x.exact), 0);
-      // Largest remainders get the leftover slots, so the total is exactly `open`.
-      const order = [...shares].sort((a, b) => (b.exact % 1) - (a.exact % 1));
-      const extra = new Set(order.slice(0, left).map((x) => x.c));
-      for (const x of shares) {
-        const n = Math.floor(x.exact) + (extra.has(x.c) ? 1 : 0);
-        if (n > 0) basics[land[x.c]] = (basics[land[x.c]] ?? 0) + n;
-      }
-    }
-    p.basics = cleanBasics(basics);
-    p.state = computeState(p, items, bad);
-    await (await getDb()).put('projects', p);
-    return toProject(p, p.state);
-  },
-
   /** Numbers about the cards currently kept: types and mana curve. */
   async deckStats(id: number | string) {
     const p = await getReady(id);
@@ -742,8 +638,7 @@ export const api = {
       byType: CATEGORIES.filter((c) => byType[c]).map((c) => ({ type: c as string, count: byType[c] })),
       curve,
       avgMv: spells ? mvSum / spells : 0,
-      lands: (byType.Lands ?? 0) + s.basicsTotal,
-      basics: s.basicsTotal,
+      lands: byType.Lands ?? 0,
     };
   },
 
@@ -800,7 +695,7 @@ export const api = {
 
   /**
    * ManaBox-style decklist: "1 Card Name" per line under "// SECTION" headers
-   * (commander first, then each card type; basics go under lands with their counts).
+   * (commander first, then each card type). Basic lands are not part of it.
    */
   async exportDeck(id: number | string) {
     const p = await getReady(id);
@@ -818,13 +713,13 @@ export const api = {
         .map((i) => i.name)
         .sort((x, y) => x.localeCompare(y, undefined, { sensitivity: 'base' }))
         .map((n) => `1 ${n}`);
-      if (cat === 'Lands') for (const b of ALL_BASICS) if (p.basics[b] > 0) lines.push(`${p.basics[b]} ${b}`);
       if (lines.length) sections.push([`// ${cat.toUpperCase()}`, ...lines].join('\n'));
     }
     return {
       text: sections.join('\n\n'),
-      count: kept.length + s.basicsTotal + s.commanderCount,
-      deckSize: p.deckSize,
+      count: kept.length + s.commanderCount,
+      deckSize: DECK_SIZE,
+      openSlots: Math.max(0, s.target - kept.length),
       complete: s.complete,
       fileName: `${p.name.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'deck'}.txt`,
     };
@@ -882,7 +777,7 @@ export const api = {
 
 // Every method that changes saved data reports it, so the automatic backup can follow.
 for (const k of [
-  'updateProject', 'deleteProject', 'swipe', 'undo', 'bulkApply', 'reorder', 'fillBasics', 'nextRound', 'removeBad', 'importBackup',
+  'updateProject', 'deleteProject', 'swipe', 'undo', 'reorder', 'nextRound', 'removeBad', 'importBackup',
 ] as const) {
   const fn = api[k] as (...a: any[]) => Promise<unknown>;
   (api as any)[k] = async (...a: any[]) => {

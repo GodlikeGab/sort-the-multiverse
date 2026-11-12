@@ -41,7 +41,6 @@ export interface ProjectState {
   bad: number;
   hidden: number; // hidden by the global bad list
   deckSize: number;
-  basicsTotal: number;
   commanderCount: number;
   target: number; // non-basic cards wanted
   toCut: number;
@@ -95,7 +94,6 @@ export interface NewProject {
 }
 
 export { api } from './store';
-export type { BulkCriteria } from './store';
 
 export const DECISION_META: Record<Decision, { label: string; arrow: string; color: string }> = {
   keep: { label: 'Keep', arrow: '→', color: 'var(--keep)' },
@@ -118,12 +116,6 @@ const FORMAT_NAMES: Record<string, string> = {
 };
 export const formatName = (f: string | null | undefined) =>
   !f ? 'No format' : FORMAT_NAMES[f] ?? f.charAt(0).toUpperCase() + f.slice(1);
-
-export const BASICS = ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest', 'Wastes'];
-export const SNOW_BASICS = [
-  'Snow-Covered Plains', 'Snow-Covered Island', 'Snow-Covered Swamp',
-  'Snow-Covered Mountain', 'Snow-Covered Forest', 'Snow-Covered Wastes',
-];
 
 export const money = (n: number | null | undefined, sym = '$') =>
   n == null ? '—' : `${sym}${n.toFixed(2)}`;

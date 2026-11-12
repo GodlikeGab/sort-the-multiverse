@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { api, DECISION_META, type BulkCriteria, type Card, type Decision, type Project, type ProjectState } from '../api';
-import { BulkSheet } from '../components/BulkSheet';
+import { api, DECISION_META, type Card, type Decision, type Project, type ProjectState } from '../api';
 import { CATEGORIES, categoryOf } from '../cards';
 import { CardModal } from '../components/CardModal';
-import { BasicsEditor, CardList, ExportBox, MoveButtons, TargetMath, targetMessage } from '../components/Shared';
+import { CardList, ExportBox, MoveButtons, targetMessage } from '../components/Shared';
 import { SwipeDeck, type SwipeDeckHandle } from '../components/SwipeDeck';
 
 type Phase = 'swipe' | 'maybe' | 'summary';
@@ -34,11 +33,22 @@ const KEYS: Record<string, Decision> = {
   b: 'bad', B: 'bad',
 };
 
-/** Rough time left, from the median gap between your recent swipes. */
-function etaText(times: number[], remaining: number): string | null {
-  if (times.length < 8 || remaining <= 0) return null;
-  const gaps = times.slice(-31).map((t, i, a) => (i ? t - a[i - 1] : 0)).slice(1).sort((a, b) => a - b);
-  const median = Math.min(gaps[Math.floor(gaps.length / 2)], 30000);
+/**
+ * Rough time left, from the median gap between your recent swipes. The pace is
+ * remembered per project, so the estimate is there as soon as you come back.
+ */
+function etaText(times: number[], remaining: number, pid: string): string | null {
+  if (remaining <= 0) return null;
+  const key = `stm.pace.${pid}`;
+  let median = 0;
+  if (times.length >= 8) {
+    const gaps = times.slice(-31).map((t, i, a) => (i ? t - a[i - 1] : 0)).slice(1).sort((a, b) => a - b);
+    median = Math.min(gaps[Math.floor(gaps.length / 2)], 30000);
+    try { localStorage.setItem(key, String(median)); } catch { /* ignore */ }
+  } else {
+    try { median = Number(localStorage.getItem(key)) || 0; } catch { /* ignore */ }
+  }
+  if (!median) return null;
   const min = (remaining * median) / 60000;
   if (min < 1) return 'under a minute';
   return min < 90 ? `about ${Math.round(min)} min` : `about ${(min / 60).toFixed(1)} h`;
@@ -62,7 +72,6 @@ export default function Swipe() {
   const [listVersion, setListVersion] = useState(0);
   const [showCuts, setShowCuts] = useState(false);
   const [starting, setStarting] = useState(false);
-  const [bulkOpen, setBulkOpen] = useState(false);
   const times = useRef<number[]>([]); // when each swipe of this session happened
   const deck = useRef<SwipeDeckHandle>(null);
 
@@ -157,12 +166,6 @@ export default function Swipe() {
     }).catch(() => {});
   };
 
-  const bulk = (crit: BulkCriteria, d: 'keep' | 'cut' | 'maybe') =>
-    run(() => api.bulkApply(pid, crit, d)).then((r) => {
-      setSt(r.state);
-      setLoaded(null); // reload the queue
-    });
-
   const nextRound = () => {
     setStarting(true);
     run(() => api.nextRound(pid)).then((p) => {
@@ -178,7 +181,7 @@ export default function Swipe() {
       if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      if (info || bulkOpen) return; // dialogs handle their own keys
+      if (info) return; // the dialog handles its own keys
       const d = KEYS[e.key];
       if (d) {
         e.preventDefault();
@@ -192,7 +195,7 @@ export default function Swipe() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [undo, info, bulkOpen, queue]);
+  }, [undo, info, queue]);
 
   if (error && !st) return <main className="page"><p className="error">{error}</p><Link to="/">Back to projects</Link></main>;
   if (!project || !st || !phase) return <main className="page"><div className="spinner" /></main>;
@@ -203,7 +206,7 @@ export default function Swipe() {
   const canUndo = st.reviewed > 0;
   const types = CATEGORIES.filter((c) => st.byType[c]);
   const ready = loaded?.phase === phase && loaded.cat === cat;
-  const eta = phase === 'swipe' ? etaText(times.current, st.remaining) : null;
+  const eta = phase === 'swipe' ? etaText(times.current, st.remaining, pid) : null;
   const typeDone = phase === 'swipe' && ready && !!cat && queue.length === 0;
 
   const header = (
@@ -220,7 +223,7 @@ export default function Swipe() {
         <span style={{ color: 'var(--keep)' }}><strong>{st.keep.toLocaleString()}</strong> kept</span>
         <span>target <strong>{st.target}</strong></span>
         {st.maybe > 0 && <span style={{ color: 'var(--maybe)' }}>{st.maybe} maybe</span>}
-        {eta && <span className="faint">{eta} at this pace</span>}
+        {eta && <span className="eta">{eta} left at your pace</span>}
       </div>
     </div>
   );
@@ -240,7 +243,6 @@ export default function Swipe() {
             </div>
             <div className={`verdict ${msg.tone}`}>{msg.text}</div>
           </div>
-          <TargetMath s={st} />
           <div className="pile-counts">
             <span><span className="dot" style={{ background: 'var(--keep)' }} />Kept {st.keep}</span>
             <span><span className="dot" style={{ background: 'var(--cut)' }} />Cut {st.cut}</span>
@@ -249,37 +251,20 @@ export default function Swipe() {
           </div>
           {error && <p className="error small">{error}</p>}
           <div className="row">
-            {st.complete ? (
-              <Link className="btn primary" to={`/projects/${pid}`}>Finish · project page</Link>
-            ) : (
-              <button className="btn primary" disabled={st.keep === 0 || starting} onClick={nextRound}>
-                Start round {st.round + 1} with {st.keep.toLocaleString()} cards
-              </button>
-            )}
+            {st.complete && <Link className="btn primary" to={`/projects/${pid}`}>Finish · export</Link>}
+            <button className={st.complete ? 'btn' : 'btn primary'} disabled={st.keep === 0 || starting} onClick={nextRound}>
+              {st.complete ? `Trim further in round ${st.round + 1}` : `Start round ${st.round + 1} with ${st.keep.toLocaleString()} cards`}
+            </button>
             <button className="btn" onClick={undo} disabled={!canUndo}>↶ Undo</button>
             <Link className="btn ghost" to={`/projects/${pid}/rounds/${st.round}`}>Review all lists</Link>
           </div>
           {st.keep === 0 && <p className="muted small">Nothing was kept. Move cards back from the cut list below, or undo.</p>}
-          {!st.complete && st.keep > 0 && st.toCut <= 0 && (
-            <p className="muted small" style={{ margin: 0 }}>You are at or under the deck size. Fill the open slots with basics below to finish, or start another round to trim further.</p>
-          )}
-        </div>
-
-        <div className="panel stack" style={{ marginTop: 14 }}>
-          <div>
-            <h2>Basic lands</h2>
-            <p className="muted small" style={{ margin: '4px 0 0' }}>
-              Basics fill whatever the kept cards leave open. Set them now, or later on the project page.
-            </p>
-          </div>
-          <BasicsEditor key={`${st.round}-${st.keep}`} project={{ ...project, state: st }}
-            onSaved={(p) => { setProject(p); if (p.state) setSt(p.state); }} />
         </div>
 
         {st.complete && (
           <div className="panel" style={{ marginTop: 14 }}>
             <h2 style={{ marginBottom: 10 }}>Decklist</h2>
-            <ExportBox projectId={pid} version={`${st.keep}-${st.round}-${st.complete}-${st.basicsTotal}`} />
+            <ExportBox projectId={pid} version={`${st.keep}-${st.round}-${st.complete}`} />
           </div>
         )}
 
@@ -304,7 +289,7 @@ export default function Swipe() {
   return (
     <main className="swipe-page">
       {header}
-      {phase === 'swipe' && (
+      {phase === 'swipe' && types.length > 1 && (
         <div className="type-row">
         <div className="type-bar" role="tablist" aria-label="Filter by card type">
           <button className={`type-chip ${!cat ? 'on' : ''}`} onClick={() => setCat(null)}>
@@ -316,7 +301,6 @@ export default function Swipe() {
             </button>
           ))}
         </div>
-          <button className="type-chip bulk" onClick={() => setBulkOpen(true)}>Bulk…</button>
         </div>
       )}
       {phase === 'maybe' && (
@@ -361,9 +345,6 @@ export default function Swipe() {
         {' '}<span className="kbd">Z</span>undo <span className="kbd">F</span>flip <span className="kbd">I</span>details
       </div>
       {info && <CardModal card={info} onClose={() => setInfo(null)} />}
-      {bulkOpen && (
-        <BulkSheet projectId={pid} types={types} initialType={cat} onApply={bulk} onClose={() => setBulkOpen(false)} />
-      )}
     </main>
   );
 }

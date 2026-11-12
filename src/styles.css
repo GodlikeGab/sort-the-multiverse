@@ -562,3 +562,17 @@ html { overscroll-behavior-y: contain; }
 .info-btn { flex: none; width: 54px; }
 .undo-bar:active, .info-btn:active { transform: scale(0.98); background: #1a1a1a; }
 .undo-bar:disabled, .info-btn:disabled { opacity: 0.35; cursor: default; }
+
+/* ---------- back buttons: big enough for a thumb ---------- */
+.swipe-head .back {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 44px; height: 44px; margin: -6px 0 -6px -10px; padding: 0 0 4px;
+  font-size: 2.3rem; line-height: 1; color: var(--text); border-radius: 12px;
+}
+.swipe-head .back:active { background: #1a1a1a; }
+.back-link {
+  display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px 0 10px; margin: 0 0 6px -10px;
+  font-size: 1.05rem; font-weight: 600; color: var(--text-dim); border-radius: 12px;
+}
+.back-link:active { background: #1a1a1a; color: var(--text); }
+.eta { color: var(--accent); }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, formatName, type Project, type RoundInfo, type SortKey } from '../api';
-import { BasicsEditor, DeckStats, ExportBox, TargetMath, targetMessage } from '../components/Shared';
+import { DeckStats, ExportBox, targetMessage } from '../components/Shared';
 
 export default function ProjectPage() {
   const { id } = useParams();
@@ -10,12 +10,10 @@ export default function ProjectPage() {
   const [p, setP] = useState<Project | null>(null);
   const [rounds, setRounds] = useState<RoundInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [deckSize, setDeckSize] = useState('');
 
   const load = useCallback(() => {
     api.project(pid).then((proj) => {
       setP(proj);
-      setDeckSize((d) => d || String(proj.deckSize));
       if (proj.status === 'ready') api.rounds(pid).then(setRounds).catch(() => {});
     }).catch((e) => setError(e.message));
   }, [pid]);
@@ -47,7 +45,7 @@ export default function ProjectPage() {
   const head = (
     <div className="page-head">
       <div style={{ minWidth: 0 }}>
-        <Link to="/" className="small muted">‹ Projects</Link>
+        <Link to="/" className="back-link">‹ Projects</Link>
         <h1>{p.name} <button className="btn ghost sm" onClick={rename} aria-label="Rename project">✎</button></h1>
         <div className="muted small">
           {formatName(p.format)}{p.commander && <> · Commander: {p.commander.name}</>}
@@ -85,11 +83,6 @@ export default function ProjectPage() {
   const s = p.state!;
   const msg = targetMessage(s);
   const pct = s.total ? (s.reviewed / s.total) * 100 : 0;
-  const saveDeckSize = (v: string) => {
-    setDeckSize(v);
-    const n = Math.floor(Number(v));
-    if (n > 0 && n <= 1000) api.updateProject(p.id, { deckSize: n }).then(setP).catch(() => {});
-  };
 
   return (
     <main className="page" style={{ maxWidth: 860 }}>
@@ -98,7 +91,7 @@ export default function ProjectPage() {
       <div className="panel stack">
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <span className="round-pill">Round {s.round}</span>
-          {s.complete && <span className="complete-badge">✓ Deck complete</span>}
+          {s.complete && <span className="complete-badge">✓ Deck ready</span>}
         </div>
         <div className="progress"><span style={{ width: `${pct}%`, background: 'var(--accent)' }} /></div>
         <div className="stats">
@@ -115,24 +108,6 @@ export default function ProjectPage() {
               : s.maybe > 0 ? 'Resolve maybes' : 'Round summary'}
           </Link>
           <Link className="btn" to={`/projects/${p.id}/rounds/${s.round}`}>This round's lists</Link>
-        </div>
-      </div>
-
-      <div className="panel stack" style={{ marginTop: 14 }}>
-        <h2>Deck size and basic lands</h2>
-        <TargetMath s={s} />
-        <div className="field">
-          <span className="label">Target deck size</span>
-          <div className="row">
-            <button type="button" className={`chip ${s.deckSize === 100 ? 'on' : ''}`} onClick={() => saveDeckSize('100')}>Commander 100</button>
-            <button type="button" className={`chip ${s.deckSize === 60 ? 'on' : ''}`} onClick={() => saveDeckSize('60')}>Constructed 60</button>
-            <input className="input" style={{ width: 84 }} type="number" min={1} max={1000} inputMode="numeric"
-              aria-label="Custom deck size" value={deckSize} onChange={(e) => saveDeckSize(e.target.value)} />
-          </div>
-        </div>
-        <div className="field">
-          <span className="label">Basic lands</span>
-          <BasicsEditor key={`${s.round}-${s.keep}`} project={p} onSaved={setP} />
         </div>
       </div>
 
@@ -155,7 +130,7 @@ export default function ProjectPage() {
 
       <div className="panel stack" style={{ marginTop: 14 }}>
         <h2>Kept cards</h2>
-        <DeckStats projectId={p.id} version={`${s.keep}-${s.round}-${s.basicsTotal}`} />
+        <DeckStats projectId={p.id} version={`${s.keep}-${s.round}`} />
       </div>
 
       <div className="panel stack" style={{ marginTop: 14 }}>
@@ -179,7 +154,7 @@ export default function ProjectPage() {
 
       <div className="panel stack" style={{ marginTop: 14 }}>
         <h2>Decklist export</h2>
-        <ExportBox projectId={p.id} version={`${s.keep}-${s.round}-${s.deckSize}-${s.complete}-${JSON.stringify(p.basics)}`} />
+        <ExportBox projectId={p.id} version={`${s.keep}-${s.round}-${s.complete}`} />
       </div>
 
       <div className="panel stack" style={{ marginTop: 14 }}>

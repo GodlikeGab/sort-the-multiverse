@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { api, BASICS, DECISION_META, SNOW_BASICS, type Card, type Decision, type Project, type ProjectState } from '../api';
+import { api, DECISION_META, type Card, type Decision, type ProjectState } from '../api';
 import { categoryOf } from '../cards';
 import { copyText, useDebounced } from '../hooks';
 import { download } from '../store';
@@ -81,93 +81,13 @@ export function CardList({ projectId, round, list, action, version = 0, search =
   );
 }
 
-/** Deck size − basics − commander = non-basic target. */
-export function TargetMath({ s }: { s: ProjectState }) {
-  return (
-    <div className="math">
-      <div><span className="big">{s.deckSize}</span><span className="cap">deck size</span></div>
-      <span className="sym">−</span>
-      <div><span className="big">{s.basicsTotal}</span><span className="cap">basics</span></div>
-      {s.commanderCount > 0 && <>
-        <span className="sym">−</span>
-        <div><span className="big">{s.commanderCount}</span><span className="cap">commander</span></div>
-      </>}
-      <span className="sym">=</span>
-      <div className="result"><span className="big">{s.target}</span><span className="cap">non-basic target</span></div>
-    </div>
-  );
-}
-
-/** One line describing how the kept cards compare to the target. */
+/** One line describing how the kept cards compare to the 100-card deck. */
 export function targetMessage(s: ProjectState): { text: string; tone: 'ok' | 'warn' | 'info' } {
-  if (s.complete) return { text: 'Deck complete', tone: 'ok' };
-  if (s.target < 0) return { text: `Basics and commander exceed the deck size by ${-s.target}`, tone: 'warn' };
-  if (s.toCut > 0) {
-    const basics = s.basicsTotal ? ` (with ${s.basicsTotal} basic${s.basicsTotal === 1 ? '' : 's'})` : ' (before any basic lands)';
-    return { text: `${s.toCut} over the deck size${basics} — cut more`, tone: 'info' };
-  }
-  if (s.toCut < 0) {
-    const n = -s.toCut;
-    return { text: `${n} open slot${n === 1 ? '' : 's'} — fill ${n === 1 ? 'it' : 'them'} with basic lands, or keep more cards`, tone: 'info' };
-  }
-  return { text: `Exactly ${s.target} kept`, tone: 'ok' };
-}
-
-function Stepper({ label, value, onChange }: { label: string; value: number; onChange: (n: number) => void }) {
-  return (
-    <div className="stepper">
-      <span className="name">{label}</span>
-      <button type="button" className="btn sm" onClick={() => onChange(Math.max(0, value - 1))} disabled={value <= 0} aria-label={`Fewer ${label}`}>−</button>
-      <input className="input" inputMode="numeric" value={value} aria-label={label}
-        onChange={(e) => onChange(Math.max(0, Math.min(999, Math.floor(Number(e.target.value.replace(/\D/g, '')) || 0))))} />
-      <button type="button" className="btn sm" onClick={() => onChange(value + 1)} aria-label={`More ${label}`}>＋</button>
-    </div>
-  );
-}
-
-/** Basic land counts. Saves on every change and reports the updated project. */
-export function BasicsEditor({ project, onSaved }: { project: Project; onSaved: (p: Project) => void }) {
-  const [basics, setBasics] = useState(project.basics);
-  const current = useRef(basics);
-  const latest = useRef(0);
-  const change = (name: string, n: number) => {
-    const next = { ...current.current, [name]: n };
-    current.current = next;
-    setBasics(next);
-    const ticket = ++latest.current;
-    api.updateProject(project.id, { basics: next }).then((p) => ticket === latest.current && onSaved(p));
-  };
-  const hasSnow = SNOW_BASICS.some((b) => basics[b] > 0);
-  const s = project.state;
-  const openSlots = s && s.resolved ? -s.toCut : 0; // only meaningful once the round is decided
-  const fill = () =>
-    api.fillBasics(project.id).then((p) => {
-      latest.current++;
-      current.current = p.basics;
-      setBasics(p.basics);
-      onSaved(p);
-    });
-  return (
-    <div className="stack" style={{ gap: 10 }}>
-      {openSlots > 0 && (
-        <div className="reminder" style={{ marginBottom: 0 }}>
-          <span style={{ flex: 1, minWidth: 160 }}>
-            <strong>{openSlots}</strong> open slot{openSlots === 1 ? '' : 's'} in the deck.
-          </span>
-          <button type="button" className="btn sm primary" onClick={fill}>Fill with basics</button>
-        </div>
-      )}
-      <div className="steppers">
-        {BASICS.map((b) => <Stepper key={b} label={b} value={basics[b] ?? 0} onChange={(n) => change(b, n)} />)}
-      </div>
-      <details open={hasSnow || undefined}>
-        <summary className="muted small" style={{ cursor: 'pointer' }}>Snow basics</summary>
-        <div className="steppers" style={{ marginTop: 10 }}>
-          {SNOW_BASICS.map((b) => <Stepper key={b} label={b} value={basics[b] ?? 0} onChange={(n) => change(b, n)} />)}
-        </div>
-      </details>
-    </div>
-  );
+  if (s.toCut > 0) return { text: `${s.toCut} over the ${s.target}-card limit — cut more`, tone: 'info' };
+  const open = -s.toCut;
+  const slots = `${open} slot${open === 1 ? '' : 's'}`;
+  if (s.complete) return { text: open ? `Deck ready — ${slots} left for basic lands` : 'Deck complete — every slot is filled', tone: 'ok' };
+  return { text: open ? `${slots} still open` : `Exactly ${s.target} kept`, tone: 'info' };
 }
 
 const CURVE_LABELS = ['0', '1', '2', '3', '4', '5', '6', '7+'];
@@ -190,7 +110,7 @@ export function DeckStats({ projectId, version }: { projectId: number | string; 
     <div className="stack">
       <div className="stat-tiles">
         <div className="stat-tile"><span className="big">{d.count.toLocaleString()}</span><span className="cap">kept cards</span></div>
-        <div className="stat-tile"><span className="big">{d.lands}</span><span className="cap">lands incl. {d.basics} basics</span></div>
+        <div className="stat-tile"><span className="big">{d.lands}</span><span className="cap">lands kept</span></div>
         <div className="stat-tile"><span className="big">{d.avgMv.toFixed(2)}</span><span className="cap">avg mana value</span></div>
       </div>
 
@@ -247,7 +167,8 @@ export function ExportBox({ projectId, version }: { projectId: number | string; 
   return (
     <div className="stack" style={{ gap: 10 }}>
       <span className="muted small">
-        {data.count} of {data.deckSize} cards{data.complete ? ' · complete' : ' · current kept list'}
+        {data.count} of {data.deckSize} cards
+        {data.openSlots > 0 ? ` · ${data.openSlots} slot${data.openSlots === 1 ? '' : 's'} left for basic lands` : ''}
       </span>
       <div className="row">
         <button className="btn primary" disabled={!data.text}

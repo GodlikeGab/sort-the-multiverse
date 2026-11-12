@@ -25,7 +25,7 @@ function ProjectCard({ p }: { p: Project }) {
         <div>
           <Link to={`/projects/${p.id}`} className="title">{p.name}</Link>
           <div className="muted small">
-            {formatName(p.format)} · {p.deckSize} cards{p.commander && <> · {p.commander.name}</>}
+            {formatName(p.format)}{p.commander && <> · {p.commander.name}</>}
           </div>
         </div>
         {p.status === 'loading' && <div className="muted small">Fetching cards from Scryfall… {p.load.fetched}/{p.load.total || '?'}</div>}
@@ -37,7 +37,7 @@ function ProjectCard({ p }: { p: Project }) {
                 <span className="round-pill">Round {s.round}</span>{' '}
                 <strong>{s.reviewed.toLocaleString()}</strong> <span className="muted">of {s.total.toLocaleString()} reviewed</span>
               </span>
-              {s.complete && <span className="complete-badge">✓ Deck complete</span>}
+              {s.complete && <span className="complete-badge">✓ Deck ready</span>}
             </div>
             <div className="progress" aria-hidden><span style={{ width: `${pct}%`, background: s.complete ? 'var(--keep)' : 'var(--accent)' }} /></div>
           </div>

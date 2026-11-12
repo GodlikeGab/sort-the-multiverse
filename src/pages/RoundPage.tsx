@@ -33,7 +33,7 @@ export default function RoundPage() {
     <main className="page">
       <div className="page-head">
         <div>
-          <Link to={`/projects/${pid}`} className="small muted">‹ Project</Link>
+          <Link to={`/projects/${pid}`} className="back-link">‹ Project</Link>
           <h1>Round {round.number}</h1>
           <div className="muted small">
             {(round.pool - round.hidden).toLocaleString()} cards → {round.keep.toLocaleString()} kept ·{' '}

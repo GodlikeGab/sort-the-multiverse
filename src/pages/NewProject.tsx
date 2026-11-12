@@ -77,7 +77,6 @@ export default function NewProject() {
   const [name, setName] = useState(from ? `${from.name} (copy)` : '');
   const [format, setFormat] = useState<string>(from ? from.format ?? '' : 'commander');
   const [legalOnly, setLegalOnly] = useState(from?.format ? from.query.includes(`legal:${from.format}`) : true);
-  const [deckSize, setDeckSize] = useState(from?.deckSize ?? 100);
   const [commander, setCommander] = useState<Card | null>(from?.commander ?? null);
   const [builder, setBuilder] = useState<Builder>(() => ({ ...emptyBuilder(), ...(from?.builder ?? {}) }));
   const [sort, setSort] = useState<SortKey>(from && SORTS.some((s) => s.v === from.sort) ? from.sort : 'type');
@@ -107,7 +106,6 @@ export default function NewProject() {
 
   const pickFormat = (f: string) => {
     setFormat(f);
-    setDeckSize(f === 'commander' || f === 'paupercommander' || f === 'predh' || f === 'duel' ? 100 : 60);
     if (!COMMANDER_FORMATS.includes(f)) setCommander(null);
   };
 
@@ -117,7 +115,7 @@ export default function NewProject() {
     setSaving(true);
     try {
       const p = await api.createProject({
-        name: name.trim(), query, builder, format: format || null, deckSize,
+        name: name.trim(), query, builder, format: format || null, deckSize: 100,
         commanderId: commander?.id ?? null, sort,
       });
       navigate(`/projects/${p.id}`, { replace: true });
@@ -154,16 +152,6 @@ export default function NewProject() {
                 Only cards legal in {formatName(format)}
               </label>
             )}
-          </div>
-          <div className="field">
-            <span className="label">Target deck size</span>
-            <div className="row">
-              <button type="button" className={`chip ${deckSize === 100 ? 'on' : ''}`} onClick={() => setDeckSize(100)}>Commander 100</button>
-              <button type="button" className={`chip ${deckSize === 60 ? 'on' : ''}`} onClick={() => setDeckSize(60)}>Constructed 60</button>
-              <input className="input" style={{ width: 84 }} type="number" min={1} max={1000} inputMode="numeric"
-                aria-label="Custom deck size" value={deckSize || ''}
-                onChange={(e) => setDeckSize(Math.max(0, Math.floor(Number(e.target.value))))} />
-            </div>
           </div>
           {(!format || COMMANDER_FORMATS.includes(format)) && (
             <div className="field wide">
