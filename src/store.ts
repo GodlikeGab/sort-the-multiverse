@@ -50,6 +50,8 @@ interface ProjectRec {
   lastActivityAt: string | null;
   rounds: RoundMeta[];
   state: ProjectState | null; // cached so the home screen is instant
+  scannedAt?: string | null; // last new-card check
+  lastAdded?: { at: string; count: number; names: string[] } | null;
 }
 interface Rc {
   pid: number;
@@ -58,6 +60,7 @@ interface Rc {
   name: string;
   cat: string; // card type category, for filtering and grouping
   pos: number; // swipe order
+  newAt?: string; // set when a new-card check added this card after the project was created
   d: Decision | null;
 }
 interface LogRec {
@@ -157,8 +160,10 @@ function counts(p: ProjectRec, items: Rc[], bad: Set<string>) {
 function computeState(p: ProjectRec, items: Rc[], bad: Set<string>): ProjectState {
   const c = counts(p, items, bad);
   const byType: ProjectState['byType'] = {};
+  let newCount = 0;
   for (const i of items) {
     if (!i.d && !p.ignoreBad && bad.has(i.cardId)) continue; // hidden
+    if (!i.d && i.newAt) newCount++;
     const t = (byType[i.cat ?? 'Other'] ??= { total: 0, reviewed: 0 });
     t.total++;
     if (i.d) t.reviewed++;
@@ -179,6 +184,7 @@ function computeState(p: ProjectRec, items: Rc[], bad: Set<string>): ProjectStat
     resolved,
     complete: total > 0 && ((resolved && c.keep > 0 && c.keep <= target) || freshFit),
     deckFromPool: freshFit,
+    newCount,
     byType,
   };
 }
@@ -195,7 +201,8 @@ async function toProject(p: ProjectRec, state: ProjectState | null): Promise<Pro
     deckSize: p.deckSize,
     commander: p.commanderId ? ((await db.get('cards', p.commanderId)) as Card) ?? null : null,
     sort: p.sort, ignoreBad: p.ignoreBad, basics: p.basics, status: p.status, load: p.load,
-    createdAt: p.createdAt, lastActivityAt: p.lastActivityAt, state,
+    createdAt: p.createdAt, lastActivityAt: p.lastActivityAt,
+    scannedAt: p.scannedAt ?? null, lastAdded: p.lastAdded ?? null, state,
   };
 }
 
@@ -275,6 +282,8 @@ async function downloadProject(id: number) {
     await tx.done;
     dropCache(id);
     changeListener();
+    // Previews of unreleased sets are not "legal" yet, so the search above missed them: fetch those too.
+    void api.scanNewCards(id).catch(() => {});
   } catch (err) {
     const cur = (await db.get('projects', id)) as ProjectRec | undefined;
     if (cur) {
@@ -312,7 +321,7 @@ export interface Snapshot {
   deviceId: string;
   savedAt: string;
   projects: ProjectRec[];
-  rc: [number, number, string, number, string, string, string][]; // pid, round, cardId, pos, decision, name, type
+  rc: [number, number, string, number, string, string, string, string?][]; // pid, round, cardId, pos, decision, name, type, newAt
   log: [number, number, string, string, string, number, number][]; // pid, round, cardId, prev, decision, badAdded, batch
   bad: [string, string][]; // cardId, addedAt
 }
@@ -329,7 +338,11 @@ export async function buildSnapshot(deviceId: string): Promise<Snapshot> {
   return {
     app: 'sort-the-multiverse', version: 2, deviceId, savedAt: now(),
     projects,
-    rc: rc.map((r) => [r.pid, r.round, r.cardId, r.pos, r.d ? D_CODE[r.d] : '', r.name, r.cat ?? 'Other']),
+    rc: rc.map((r) => {
+      const row: Snapshot['rc'][number] = [r.pid, r.round, r.cardId, r.pos, r.d ? D_CODE[r.d] : '', r.name, r.cat ?? 'Other'];
+      if (r.newAt) row.push(r.newAt);
+      return row;
+    }),
     log: log.map((l) => [l.pid, l.round, l.cardId, l.prev ? D_CODE[l.prev] : '', D_CODE[l.d], l.badAdded ? 1 : 0, l.batch ?? 0]),
     bad: bad.map((b) => [b.cardId, b.addedAt]),
   };
@@ -345,8 +358,10 @@ export async function restoreSnapshot(snap: Snapshot, onProgress: (done: number,
     // A download cannot resume inside a restored copy.
     void tx.objectStore('projects').put(p.status === 'loading' ? { ...p, status: 'error', load: { ...p.load, error: 'The download was interrupted. Retry to fetch the cards again.' } } : p);
   }
-  for (const [pid, round, cardId, pos, d, name, cat] of snap.rc) {
-    void tx.objectStore('rc').put({ pid, round, cardId, name, cat, pos, d: d ? D_NAME[d] : null } satisfies Rc);
+  for (const [pid, round, cardId, pos, d, name, cat, newAt] of snap.rc) {
+    const rec: Rc = { pid, round, cardId, name, cat, pos, d: d ? D_NAME[d] : null };
+    if (newAt) rec.newAt = newAt;
+    void tx.objectStore('rc').put(rec);
   }
   for (const [pid, round, cardId, prev, d, badAdded, batch] of snap.log) {
     const rec: LogRec = { pid, round, cardId, prev: prev ? D_NAME[prev] : null, d: D_NAME[d], badAdded: !!badAdded };
@@ -508,7 +523,7 @@ export const api = {
   /** Next cards to swipe. mode "maybe" returns this round's Maybe cards instead. */
   async queue(id: number | string, mode: 'swipe' | 'maybe', limit = 8, cat: string | null = null) {
     const p = await getReady(id);
-    const { items } = await loadRound(p.id, p.currentRound);
+    const { items, byId } = await loadRound(p.id, p.currentRound);
     const bad = await getBad();
     const ids: string[] = [];
     for (const i of items) {
@@ -516,7 +531,8 @@ export const api = {
       const want = mode === 'maybe' ? i.d === 'maybe' : !i.d && (p.ignoreBad || !bad.has(i.cardId));
       if (want && ids.push(i.cardId) >= limit) break;
     }
-    return { cards: await getCards(ids), state: computeState(p, items, bad) };
+    const cards = (await getCards(ids)).map((c) => (byId.get(c.id)?.newAt ? { ...c, isNew: true } : c));
+    return { cards, state: computeState(p, items, bad) };
   },
 
   /** Set a card's decision in the current round (swipe, resolve a maybe, or rescue a cut). */
@@ -614,6 +630,68 @@ export const api = {
     void tx.objectStore('projects').put(p);
     await tx.done;
     return toProject(p, p.state);
+  },
+
+  /**
+   * Asks Scryfall for cards that match the project's search but are not in its
+   * pool yet (newly previewed or newly released cards) and adds them to the
+   * current round as undecided, in their place in the project's order.
+   */
+  async scanNewCards(id: number | string): Promise<{ added: number; names: string[] }> {
+    const start = await getReady(id);
+    const today = now().slice(0, 10);
+    // Scryfall marks preview cards "not legal" until release day, so unreleased paper cards are accepted too.
+    const query = start.query.replace(/(?<![-\w])legal:(\w+)/g, `(legal:$1 or (date>${today} game:paper))`);
+    // Only printings from shortly before the project was created onwards can be new to it.
+    const since = new Date(new Date(start.createdAt).getTime() - 45 * 86400000).toISOString().slice(0, 10);
+    const raw = await searchAll(`${query} date>=${since}`, 'name', () => {});
+    const seen = new Set<string>();
+    const found = raw.map(toCard).filter((c) => c.id && c.name && !seen.has(c.id) && seen.add(c.id));
+
+    // The download took a while: read the project again, it may have moved on.
+    const p = await getReady(id);
+    const first = await loadRound(p.id, 1);
+    const mem = await loadRound(p.id, p.currentRound);
+    const inPool = (cid: string) => first.byId.has(cid) || mem.byId.has(cid);
+    const fresh = found.filter((c) => !inPool(c.id) && c.id !== p.commanderId);
+    const t = now();
+    const db = await getDb();
+
+    // Random order: new cards come up next. Any other order: they are slotted in below.
+    const todo = mem.items.filter((i) => !i.d);
+    let pos = p.sort === 'random'
+      ? (todo.length ? Math.min(...todo.map((i) => i.pos)) : 0) - fresh.length
+      : mem.items.reduce((m, i) => Math.max(m, i.pos), -1) + 1;
+    const recs: Rc[] = fresh.map((c) => ({
+      pid: p.id, round: p.currentRound, cardId: c.id, name: c.name, cat: categoryOf(c.typeLine), pos: pos++, d: null, newAt: t,
+    }));
+    const before = mem.items.length;
+    const tx = db.transaction(['cards', 'rc'], 'readwrite');
+    // Cards already in the pool are refreshed as well: previews get their final text and better images later.
+    for (const c of found) if (inPool(c.id) || fresh.includes(c)) void tx.objectStore('cards').put(c);
+    for (const r of recs) void tx.objectStore('rc').put(r);
+    await tx.done;
+    for (const r of recs) {
+      mem.items.push(r);
+      mem.byId.set(r.cardId, r);
+    }
+    mem.items.sort((a, b) => a.pos - b.pos);
+    // Guard against cards silently going missing: the pool must have grown by exactly that many.
+    if (mem.items.length !== before + fresh.length) {
+      dropCache(p.id);
+      fail('The new cards were not all saved. Check again.');
+    }
+
+    const names = fresh.map((c) => c.name).sort((a, b) => a.localeCompare(b));
+    p.scannedAt = t;
+    if (fresh.length) p.lastAdded = { at: t, count: fresh.length, names: names.slice(0, 30) };
+    p.state = computeState(p, mem.items, await getBad());
+    await db.put('projects', p);
+    // Put them where they belong in the project's order, e.g. with the other planeswalkers.
+    if (fresh.length && p.sort !== 'random') await api.reorder(p.id, p.sort);
+    changeListener();
+    window.dispatchEvent(new Event('stm:projects'));
+    return { added: fresh.length, names };
   },
 
   /** Numbers about the cards currently kept: types and mana curve. */

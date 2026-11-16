@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, formatName, type Project, type RoundInfo, type SortKey } from '../api';
 import { DeckStats, ExportBox, targetMessage } from '../components/Shared';
+import { onProjectsChanged } from '../newcards';
+import { when } from './BackupPage';
 
 export default function ProjectPage() {
   const { id } = useParams();
@@ -10,6 +12,8 @@ export default function ProjectPage() {
   const [p, setP] = useState<Project | null>(null);
   const [rounds, setRounds] = useState<RoundInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [checkMsg, setCheckMsg] = useState<string | null>(null);
 
   const load = useCallback(() => {
     api.project(pid).then((proj) => {
@@ -19,6 +23,7 @@ export default function ProjectPage() {
   }, [pid]);
 
   useEffect(load, [load]);
+  useEffect(() => onProjectsChanged(load), [load]);
 
   // While Scryfall results are downloading, poll for progress.
   useEffect(() => {
@@ -36,6 +41,14 @@ export default function ProjectPage() {
     navigate('/', { replace: true });
   };
 
+  const checkNew = () => {
+    setChecking(true);
+    setCheckMsg(null);
+    api.scanNewCards(p.id)
+      .then((r) => setCheckMsg(r.added ? `Added ${r.added} new card${r.added === 1 ? '' : 's'}.` : 'No new cards.'))
+      .catch((e) => setCheckMsg((e as Error).message))
+      .finally(() => { setChecking(false); load(); });
+  };
   const rename = () => {
     const name = prompt('Project name', p.name)?.trim();
     if (name && name !== p.name) api.updateProject(p.id, { name }).then(setP).catch(() => {});
@@ -108,6 +121,29 @@ export default function ProjectPage() {
               : s.maybe > 0 ? 'Resolve maybes' : 'Round summary'}
           </Link>
           <Link className="btn" to={`/projects/${p.id}/rounds/${s.round}`}>This round's lists</Link>
+        </div>
+      </div>
+
+      <div className="panel stack" style={{ marginTop: 14 }}>
+        <h2>New cards</h2>
+        <span className="muted small">
+          Whenever you open the app it asks Scryfall for newly revealed cards that match this project's search,
+          including previews of sets that are not out yet, and adds them to the current round to review.
+        </span>
+        <div className="pile-counts">
+          <span>Last checked: {when(p.scannedAt)}</span>
+          {s.newCount > 0 && <span className="new-pill">{s.newCount} new to review</span>}
+        </div>
+        {p.lastAdded && (
+          <span className="small">
+            <span className="muted">Last added ({when(p.lastAdded.at)}): </span>
+            {p.lastAdded.names.join(', ')}
+            {p.lastAdded.count > p.lastAdded.names.length && ` and ${p.lastAdded.count - p.lastAdded.names.length} more`}
+          </span>
+        )}
+        <div className="row">
+          <button className="btn sm" disabled={checking} onClick={checkNew}>{checking ? 'Checking…' : 'Check now'}</button>
+          {checkMsg && <span className="small muted">{checkMsg}</span>}
         </div>
       </div>
 

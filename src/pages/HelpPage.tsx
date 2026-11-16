@@ -71,6 +71,13 @@ export default function HelpPage() {
         <li><strong>Delete</strong> removes the project and its progress.</li>
       </ul>
 
+      <h2>New cards</h2>
+      <ul>
+        <li><strong>Added automatically.</strong> When you open the app it asks Scryfall for newly revealed cards that match each project's search, including previews of sets that are not out yet, and adds them to the current round.</li>
+        <li><strong>In their place.</strong> A new card joins its card type. If planeswalkers were done at 38/38, the chip reads 38/39 and the card comes up next, marked New.</li>
+        <li><strong>Check now</strong> on the project page runs the check on demand and lists what was added.</li>
+      </ul>
+
       <h2>Your data and backups</h2>
       <ul>
         <li><strong>Saved instantly.</strong> Every swipe is written to this phone the moment you make it.</li>

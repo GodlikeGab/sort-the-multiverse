@@ -127,6 +127,20 @@ button), one card per line under section headers:
 - **New project from this search** opens the builder pre-filled with the project's settings.
 - **Help** in the top bar is the same guide inside the app.
 
+### New cards join automatically
+
+Each time you open the app (at most twice a day per project) it asks Scryfall for cards that
+match the project's search but are not in its pool yet, and adds them to the current round as
+cards to review. That covers newly released sets and **previews of sets that are not out
+yet**: Scryfall lists preview cards as soon as they are officially revealed, and although it
+marks them "not legal" until release day, the check accepts them.
+
+- A new card takes its place in the project's order. If you had finished the planeswalkers
+  at 38/38, the chip reads 38/39 and that card comes up next, marked **New**.
+- The home screen and the project page show how many new cards are waiting.
+- **Project page → New cards → Check now** runs the check on demand and lists what was added.
+- Nothing can run while the app is closed, so cards appear the next time you open it.
+
 ## Your data and backups
 
 Your progress is protected in three layers, all automatic:
@@ -164,7 +178,8 @@ Notes:
 ## Good to know
 
 - **Basic lands are left out of searches** (`-t:basic` is added); you add them yourself in ManaBox.
-- **A project's search is fixed** once created. To change it, create a new project.
+- **A project's search is fixed** once created. To change it, create a new project. New cards
+  that match the search are still added automatically.
 - **Card count check**: after a download the app compares what it saved with what Scryfall
   reported and warns on the project page if they differ.
 - **CAD prices**: Scryfall does not provide them, so the price filter offers USD and EUR.

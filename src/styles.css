@@ -576,3 +576,11 @@ html { overscroll-behavior-y: contain; }
 }
 .back-link:active { background: #1a1a1a; color: var(--text); }
 .eta { color: var(--accent); }
+
+/* ---------- newly added cards ---------- */
+.new-tag {
+  position: absolute; left: 10px; top: -10px; z-index: 3; pointer-events: none;
+  padding: 3px 10px; border-radius: 999px; background: var(--accent); color: #000;
+  font-size: 0.72rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+}
+.new-pill { color: var(--accent); font-weight: 650; }

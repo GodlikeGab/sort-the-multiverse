@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, formatName, type Project } from '../api';
 import { useBackupStatus } from '../autosave';
+import { onProjectsChanged } from '../newcards';
 import { when } from './BackupPage';
 
 function ago(iso: string | null) {
@@ -45,6 +46,7 @@ function ProjectCard({ p }: { p: Project }) {
             <span style={{ color: 'var(--keep)' }}>{s.keep.toLocaleString()} kept</span>
             <span>target {s.target}</span>
             {s.maybe > 0 && <span style={{ color: 'var(--maybe)' }}>{s.maybe} maybe</span>}
+            {s.newCount > 0 && <span className="new-pill">{s.newCount} new</span>}
           </div>
         </>}
         <div className="row" style={{ marginTop: 4 }}>
@@ -108,7 +110,8 @@ export default function Home() {
         if (ps.some((p) => p.status === 'loading')) timer = window.setTimeout(load, 1500);
       }).catch((e) => setError(e.message));
     load();
-    return () => clearTimeout(timer);
+    const off = onProjectsChanged(() => void load());
+    return () => { clearTimeout(timer); off(); };
   }, []);
 
   return (

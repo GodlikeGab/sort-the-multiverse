@@ -16,6 +16,7 @@ function applyLocal(s: ProjectState, card: Card, from: Decision | null, to: Deci
   else {
     n.remaining--;
     n.reviewed++;
+    if (card.isNew) n.newCount = Math.max(0, n.newCount - 1);
     const cat = categoryOf(card.typeLine);
     const t = n.byType[cat];
     if (t) n.byType = { ...n.byType, [cat]: { ...t, reviewed: t.reviewed + 1 } };

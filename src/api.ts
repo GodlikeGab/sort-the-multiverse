@@ -28,6 +28,8 @@ export interface Card extends CardFace {
   faces: CardFace[] | null;
   scryfallUri: string | null;
   decision?: Decision | null;
+  /** Added to the project by a new-card check, and not decided yet. */
+  isNew?: boolean;
 }
 
 export interface ProjectState {
@@ -47,6 +49,8 @@ export interface ProjectState {
   resolved: boolean;
   complete: boolean;
   deckFromPool: boolean;
+  /** Cards added by a new-card check that are still waiting for a decision. */
+  newCount: number;
   /** Per card type this round: cards to review and how many are decided. */
   byType: Record<string, { total: number; reviewed: number }>;
 }
@@ -66,6 +70,10 @@ export interface Project {
   load: { fetched: number; total: number; error: string | null; warning?: string | null };
   createdAt: string;
   lastActivityAt: string | null;
+  /** When Scryfall was last asked for new cards matching this project's search. */
+  scannedAt: string | null;
+  /** The most recent batch of cards a check added. */
+  lastAdded: { at: string; count: number; names: string[] } | null;
   state: ProjectState | null;
 }
 

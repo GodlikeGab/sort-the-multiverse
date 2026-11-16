@@ -158,6 +158,7 @@ export const SwipeDeck = forwardRef<SwipeDeckHandle, Props>(function SwipeDeck(
           </span>
         ))}
         {top.backImages && <span className="dfc-hint">↻ double-faced</span>}
+        {top.isNew && <span className="new-tag">New</span>}
       </div>
     </div>
   );
