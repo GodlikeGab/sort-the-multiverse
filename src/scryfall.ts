@@ -181,3 +181,22 @@ export async function fetchByOracleIds(ids: string[], onProgress: (done: number,
   }
   return out;
 }
+
+const EXTRA_LAYOUTS = new Set(['token', 'double_faced_token', 'emblem', 'art_series', 'planar', 'scheme', 'vanguard']);
+const EXTRA_SET_TYPES = new Set(['token', 'memorabilia', 'minigame']);
+/** Type lines of things that are not cards you can put in a deck. */
+const NON_CARD_TYPE = /^(Token|Card|Emblem)\b/;
+
+/**
+ * False for tokens, emblems, art cards, pack inserts and similar "extras".
+ * Scryfall hides those from searches by default, but not when the search names a
+ * card id, which every commander project does, so they are filtered here as well.
+ */
+export function isRealCard(c: any): boolean {
+  if (EXTRA_LAYOUTS.has(c.layout) || NON_CARD_TYPE.test(c.type_line ?? '')) return false;
+  const legalSomewhere = Object.values(c.legalities ?? {}).some((v) => v !== 'not_legal');
+  return legalSomewhere || !EXTRA_SET_TYPES.has(c.set_type);
+}
+
+/** The same test for a card already stored by this app, which only has its type line. */
+export const isRealStoredCard = (typeLine: string | null | undefined) => !NON_CARD_TYPE.test(typeLine ?? '');

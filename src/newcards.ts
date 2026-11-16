@@ -9,6 +9,7 @@
  * a preview season without having to watch for set announcements.
  */
 import { api } from './api';
+import { purgeNonCardsEverywhere } from './store';
 
 const EVERY_MS = 12 * 3600_000;
 let running = false;
@@ -32,7 +33,14 @@ export async function checkAllProjects() {
 }
 
 export function initNewCards() {
-  window.setTimeout(() => void checkAllProjects(), 4000);
+  // One-time repair: an earlier version let tokens of unreleased sets into pools.
+  const FLAG = 'stm.purgedNonCards';
+  let done = false;
+  try { done = localStorage.getItem(FLAG) === '1'; } catch { /* ignore */ }
+  const repair = done
+    ? Promise.resolve()
+    : purgeNonCardsEverywhere().then(() => { try { localStorage.setItem(FLAG, '1'); } catch { /* ignore */ } }).catch(() => {});
+  void repair.then(() => window.setTimeout(() => void checkAllProjects(), 4000));
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') void checkAllProjects();
   });

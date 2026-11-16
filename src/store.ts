@@ -15,7 +15,7 @@ import type {
 } from './api';
 import { CATEGORIES, categoryOf, categoryRank } from './cards';
 import type { Builder } from './query';
-import { fetchByOracleIds, searchAll, searchFirstPage, toCard } from './scryfall';
+import { fetchByOracleIds, isRealCard, isRealStoredCard, searchAll, searchFirstPage, toCard } from './scryfall';
 
 const ALL_BASICS = [
   'Plains', 'Island', 'Swamp', 'Mountain', 'Forest', 'Wastes',
@@ -250,7 +250,8 @@ async function downloadProject(id: number) {
     const bad = await getBad();
     if (!raw.length) fail('The search returned no cards.');
     const seen = new Set<string>();
-    const cards = raw.map(toCard).filter((c) => !seen.has(c.id) && seen.add(c.id));
+    const real = raw.filter(isRealCard); // no tokens, emblems or pack inserts
+    const cards = real.map(toCard).filter((c) => !seen.has(c.id) && seen.add(c.id));
     if (p.sort === 'random') shuffle(cards);
     if (p.sort === 'type') {
       // Scryfall returned them A–Z; a stable sort by category keeps that order inside each type.
@@ -258,7 +259,7 @@ async function downloadProject(id: number) {
       cards.sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
     }
     // Guard against cards silently going missing: every card Scryfall counted must be saved.
-    const reported = lastTotal || raw.length;
+    const reported = (lastTotal || raw.length) - (raw.length - real.length);
     const warning =
       cards.length !== reported || cards.some((c) => !c.name)
         ? `Scryfall reported ${reported} cards but ${cards.length} were saved. Retry the download if this looks wrong.`
@@ -427,6 +428,54 @@ export async function countProjects() {
   return (await getDb()).count('projects');
 }
 
+/**
+ * Removes tokens and other non-cards that a new-card check added to a project
+ * (only cards carrying `newAt` are considered), together with their undo-log
+ * entries and any place on the bad list. Returns how many were removed.
+ */
+export async function purgeNonCards(pid: number): Promise<number> {
+  const db = await getDb();
+  const p = (await db.get('projects', pid)) as ProjectRec | undefined;
+  if (!p || p.status !== 'ready') return 0;
+  const added = ((await db.getAll('rc', IDBKeyRange.bound([pid], [pid, []]))) as Rc[]).filter((r) => r.newAt);
+  if (!added.length) return 0;
+  const types = new Map((await getCards([...new Set(added.map((r) => r.cardId))])).map((c) => [c.id, c.typeLine]));
+  const junk = added.filter((r) => !isRealStoredCard(types.get(r.cardId)));
+  if (!junk.length) return 0;
+  const ids = new Set(junk.map((r) => r.cardId));
+  const names = new Set(junk.map((r) => r.name));
+
+  const tx = db.transaction(['projects', 'rc', 'log', 'bad'], 'readwrite');
+  for (const r of junk) void tx.objectStore('rc').delete([r.pid, r.round, r.cardId]);
+  let cur = await tx.objectStore('log').index('pr').openCursor(IDBKeyRange.bound([pid, 0], [pid, Infinity]));
+  while (cur) {
+    if (ids.has((cur.value as LogRec).cardId)) void cur.delete();
+    cur = await cur.continue();
+  }
+  for (const cid of ids) void tx.objectStore('bad').delete(cid);
+  if (p.lastAdded) {
+    const kept = p.lastAdded.names.filter((n) => !names.has(n));
+    const count = p.lastAdded.count - (p.lastAdded.names.length - kept.length);
+    p.lastAdded = count > 0 ? { ...p.lastAdded, names: kept, count } : null;
+  }
+  void tx.objectStore('projects').put(p);
+  await tx.done;
+
+  dropCache(pid);
+  badSet = null;
+  const cleaned = (await db.get('projects', pid)) as ProjectRec;
+  cleaned.state = await freshState(cleaned);
+  await db.put('projects', cleaned);
+  changeListener();
+  window.dispatchEvent(new Event('stm:projects'));
+  return junk.length;
+}
+
+/** Runs the clean-up for every project. */
+export async function purgeNonCardsEverywhere() {
+  for (const key of (await (await getDb()).getAllKeys('projects')) as number[]) await purgeNonCards(key);
+}
+
 export const api = {
   /** Result count for a query, before a project is created. */
   async preview(q: string) {
@@ -583,9 +632,11 @@ export const api = {
       const rec = c.value as LogRec;
       if (count > 0 && (!last.batch || rec.batch !== last.batch)) break;
       void c.delete();
-      const rc = mem.byId.get(rec.cardId)!;
-      rc.d = rec.prev;
-      void tx.objectStore('rc').put(rc);
+      const rc = mem.byId.get(rec.cardId);
+      if (rc) {
+        rc.d = rec.prev;
+        void tx.objectStore('rc').put(rc);
+      }
       if (rec.badAdded) {
         bad.delete(rec.cardId);
         void tx.objectStore('bad').delete(rec.cardId);
@@ -641,13 +692,15 @@ export const api = {
     const start = await getReady(id);
     const today = now().slice(0, 10);
     // Scryfall marks preview cards "not legal" until release day, so unreleased paper cards are accepted too.
-    const query = start.query.replace(/(?<![-\w])legal:(\w+)/g, `(legal:$1 or (date>${today} game:paper))`);
+    const query = start.query.replace(/(?<![-\w])legal:(\w+)/g, `(legal:$1 or (date>${today} game:paper -layout:token -layout:double_faced_token -layout:emblem -layout:art_series -st:token -st:memorabilia))`);
     // Only printings from shortly before the project was created onwards can be new to it.
     const since = new Date(new Date(start.createdAt).getTime() - 45 * 86400000).toISOString().slice(0, 10);
     const raw = await searchAll(`${query} date>=${since}`, 'name', () => {});
     const seen = new Set<string>();
-    const found = raw.map(toCard).filter((c) => c.id && c.name && !seen.has(c.id) && seen.add(c.id));
+    const found = raw.filter(isRealCard).map(toCard).filter((c) => c.id && c.name && !seen.has(c.id) && seen.add(c.id));
 
+    // Remove anything an earlier check added that is not a real card.
+    await purgeNonCards(Number(id));
     // The download took a while: read the project again, it may have moved on.
     const p = await getReady(id);
     const first = await loadRound(p.id, 1);
